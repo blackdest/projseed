@@ -14,7 +14,7 @@ struct Vtx{
 	GLuint color;
 };
 enum{ATTRIB_POS, ATTRIB_COLOR};
-GLuint mvpMat;
+GLuint mvpMat = 0;
 GLuint mainProgram;
 
 struct GLMatrix3 {
@@ -103,7 +103,7 @@ struct GLMatrix4 {
 	
 	void multiply_matrix_4x4(const GLfloat *A, const GLfloat *B, GLfloat *C) {
         int i = 0;
-        for( i = 0; i < 4; i++)
+		for( i = 0; i < 4; i++)
         {
             C[i] = (A[i] * B[0]) + (A[i+3] * B[1]) + (A[i+6] * B[2]) + (A[i+9] * B[3]);
             C[i+3] = (A[i] * B[4]) + (A[i+3] * B[5]) + (A[i+6] * B[6]) + (A[i+9] * B[7]);
@@ -226,12 +226,12 @@ struct GLMatrix4 {
 };
 class SceneNode {
 public:
-	GLMatrix4 transform;
+	GLMatrix3 transform;
 	vector<SceneNode*> children;
 	SceneNode() {
 		transform.setIdentity();
 	}
-	virtual void draw(const GLMatrix4 &parentTransform) {
+	virtual void draw(const GLMatrix3 &parentTransform) {
 		drawChildren(parentTransform * transform);
 	}
 	
@@ -240,7 +240,7 @@ public:
 			children[i]->update(t);
 	}
 	
-	void drawChildren(const GLMatrix4 &t) {
+	void drawChildren(const GLMatrix3 &t) {
 		for ( size_t i = 0; i < children.size(); ++i )
 			children[i]->draw(t);
 	}
@@ -248,44 +248,33 @@ public:
 	virtual ~SceneNode() {
 	}
 };
-
-class PyramidNode : public SceneNode {
-	vector<Vtx> vertices;
-	GLfloat height;
+class MagicBoxNode : public SceneNode{
+	Vtx vertices[6];
 	public:
-	PyramidNode(GLfloat radius, GLfloat height, GLuint sides, GLuint tipColor, GLuint color1, GLuint color2) : vertices(2 + max(sides,3u)), height(height) {
-		sides = max(sides,3u);
-		vertices.front().x = vertices.front().y = 0;
-		vertices.front().z = height;
-		vertices.front().color = tipColor;
-
-		for ( size_t i = 0; i < sides; ++i ) {
-			const double angle = 2.0 * i * MY_PI/(double)sides;
-			vertices[i + 1].x = radius * cos(angle);
-			vertices[i + 1].y = radius * sin(angle);
-			vertices[i + 1].z = 0;
-			if ( (i + 1) % 2 == 0 )
-				vertices[i + 1].color = color1;
-			else
-				vertices[i + 1].color = color2;
+		MagicBoxNode(GLfloat side,GLfloat x, GLfloat y){
+			vertices[0].x = x + side/2; 
+			vertices[0].y = y + side/2; 
+			vertices[1].x = x - side/2; 
+			vertices[1].y = y + side/2; 
+			
+			vertices[2].x = x - side/2; 
+			vertices[2].y = y - side/2; 
+			vertices[3].x = x - side/2; 
+			vertices[3].y = y - side/2; 
+			
+			vertices[4].x = x + side/2; 
+			vertices[4].y = y - side/2; 
+			
+			vertices[5].x = x + side/2; 
+			vertices[5].y = y + side/2; 
+			
 		}
-		vertices.back().x = radius;
-		vertices.back().y = 0;
-		vertices.back().z = 0;
-		vertices.back().color = ((vertices.size() % 2 == 0) ? color1 : color2);
-	}
-
-	virtual void draw(const GLMatrix4 &parentTransform) {
-		const GLMatrix4 &t = parentTransform * transform;
-		glVertexAttribPointer(ATTRIB_POS, 3, GL_FLOAT, GL_FALSE, sizeof(Vtx), &vertices[0].x);
+	virtual void draw(const GLMatrix3 &parentTransform) {
+		const GLMatrix3 &t = parentTransform * transform;
+		glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), &vertices[0].x);
 		glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vtx), &vertices[0].color);
-		//setTransform(t);
-
-		vertices[0].z = height;
-		glDrawArrays(GL_TRIANGLE_FAN, 0, vertices.size());
-		vertices[0].z = 0;
-		glDrawArrays(GL_TRIANGLE_FAN, 0, vertices.size());
-
+		glUniformMatrix3fv(mvpMat, 1, false, t.mat);
+		glDrawArrays(GL_TRIANGLES, 0, sizeof( vertices ) / sizeof( Vtx ) );
 		drawChildren(t);
 	}
 };
@@ -379,9 +368,6 @@ int main(){
 	
 	initShader();
 	
-	glEnableVertexAttribArray( ATTRIB_POS );
-	glEnableVertexAttribArray( ATTRIB_COLOR );
-	
 	glUseProgram(mainProgram);
 	
 	glMatrixMode(GL_PROJECTION);
@@ -391,5 +377,28 @@ int main(){
 	glLoadIdentity();
 	
 	SceneNode parent;
-
+	MagicBoxNode magicSQ1(.5,0,0);
+	parent.children.push_back(&magicSQ1);
+	
+	
+	glEnableVertexAttribArray(ATTRIB_POS);
+	glEnableVertexAttribArray(ATTRIB_COLOR);
+	double t = 0;
+	
+	GLfloat camX = 0, camY = 0, camRot = 0, camS = 1;
+	do {
+		int width, height;
+		glfwGetWindowSize(&width,&height);
+		glViewport(0,0,width,height);
+		glClear(GL_COLOR_BUFFER_BIT);
+		
+		GLMatrix3 baseTransform;
+		magicSQ1.transform.setRotation(0,0,t*10);
+		
+		parent.draw();
+		glfwSwapBuffers();
+		t+=0.5f;
+	} while ( glfwGetKey(GLFW_KEY_ESC) != GLFW_PRESS && glfwGetWindowParam(GLFW_OPENED) );
+	glfwTerminate();
+	return 0;
 }
